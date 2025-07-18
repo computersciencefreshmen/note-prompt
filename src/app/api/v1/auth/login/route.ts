@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { LoginRequest, AuthResponse } from '@/types'
+import { SimpleDB } from '@/lib/db'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key'
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000'
 
 export async function POST(request: NextRequest) {
   try {
+    // 初始化默认数据
+    await SimpleDB.initializeDefaultData()
+
     const body: LoginRequest = await request.json()
     const { username, password } = body
 
@@ -18,40 +20,41 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // 调用后端API进行用户验证
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+    // 查找用户
+    const dbUser = await SimpleDB.findUserByUsername(username)
+    if (!dbUser) {
       return NextResponse.json<AuthResponse>({
         success: false,
-        error: errorData.message || '登录失败'
-      }, { status: response.status })
+        error: '用户名或密码错误'
+      }, { status: 401 })
     }
 
-    const userData = await response.json()
+    // 验证密码
+    const isPasswordValid = await SimpleDB.verifyPassword(password, dbUser.password_hash)
+    if (!isPasswordValid) {
+      return NextResponse.json<AuthResponse>({
+        success: false,
+        error: '用户名或密码错误'
+      }, { status: 401 })
+    }
 
     // 生成JWT token
     const token = jwt.sign(
       {
-        userId: userData.id,
-        username: userData.username,
-        userType: userData.user_type
+        userId: dbUser.id,
+        username: dbUser.username,
+        userType: dbUser.user_type
       },
       JWT_SECRET,
       { expiresIn: '7d' }
     )
 
+    // 返回用户信息（不包含密码）
+    const { password_hash, ...userWithoutPassword } = dbUser
     const authResponse: AuthResponse = {
       success: true,
       data: {
-        user: userData,
+        user: userWithoutPassword,
         token
       }
     }

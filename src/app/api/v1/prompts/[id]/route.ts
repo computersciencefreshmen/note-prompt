@@ -1,143 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { UpdatePromptData, ApiResponse, Prompt } from '@/types'
-
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000'
+import { SimpleDB } from '@/lib/db'
 
 // 获取单个提示词
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const authResult = await requireAuth(request)
-  if ('error' in authResult) {
-    return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
-  }
-
-  const { user, token } = authResult
-  const promptId = params.id
+  if ('error' in authResult) return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/prompts/${promptId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-
-    if (!response.ok) {
-      return NextResponse.json<ApiResponse<null>>({
-        success: false,
-        error: '提示词不存在或无权访问'
-      }, { status: response.status })
+    const dbPrompt = await SimpleDB.findPromptById(parseInt(params.id))
+    if (!dbPrompt || dbPrompt.user_id !== authResult.user.id) {
+      return NextResponse.json<ApiResponse<null>>({ success: false, error: '提示词不存在' }, { status: 404 })
     }
 
-    const data = await response.json()
-
-    // 检查用户是否有权限访问此提示词
-    if (data.user_id !== user.id) {
-      return NextResponse.json<ApiResponse<null>>({
-        success: false,
-        error: '无权访问此提示词'
-      }, { status: 403 })
+    const prompt: Prompt = {
+      id: dbPrompt.id,
+      title: dbPrompt.title,
+      content: dbPrompt.content,
+      folder_id: dbPrompt.folder_id,
+      tags: dbPrompt.tags.map((tag, index) => ({ id: index, name: tag })),
+      updatedAt: dbPrompt.updated_at,
+      user_id: dbPrompt.user_id,
+      is_public: dbPrompt.is_public
     }
-
-    return NextResponse.json<ApiResponse<Prompt>>(data)
-
+    return NextResponse.json<ApiResponse<Prompt>>({ success: true, data: prompt })
   } catch (error) {
-    console.error('Get prompt error:', error)
-    return NextResponse.json<ApiResponse<null>>({
-      success: false,
-      error: '服务器内部错误'
-    }, { status: 500 })
+    return NextResponse.json<ApiResponse<null>>({ success: false, error: '服务器错误' }, { status: 500 })
   }
 }
 
 // 更新提示词
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const authResult = await requireAuth(request)
-  if ('error' in authResult) {
-    return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
-  }
-
-  const { user, token } = authResult
-  const promptId = params.id
+  if ('error' in authResult) return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
 
   try {
     const body: UpdatePromptData = await request.json()
+    const updated = await SimpleDB.updatePrompt(parseInt(params.id), { ...body, tags: body.tags || [] })
 
-    const response = await fetch(`${API_BASE_URL}/api/prompts/${promptId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        ...body,
-        user_id: user.id
-      })
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return NextResponse.json<ApiResponse<null>>({
-        success: false,
-        error: errorData.message || '更新提示词失败'
-      }, { status: response.status })
+    if (!updated || updated.user_id !== authResult.user.id) {
+      return NextResponse.json<ApiResponse<null>>({ success: false, error: '更新失败' }, { status: 404 })
     }
 
-    const data = await response.json()
-    return NextResponse.json<ApiResponse<Prompt>>(data)
-
+    const prompt: Prompt = {
+      id: updated.id,
+      title: updated.title,
+      content: updated.content,
+      folder_id: updated.folder_id,
+      tags: updated.tags.map((tag, index) => ({ id: index, name: tag })),
+      updatedAt: updated.updated_at,
+      user_id: updated.user_id,
+      is_public: updated.is_public
+    }
+    return NextResponse.json<ApiResponse<Prompt>>({ success: true, data: prompt })
   } catch (error) {
-    console.error('Update prompt error:', error)
-    return NextResponse.json<ApiResponse<null>>({
-      success: false,
-      error: '服务器内部错误'
-    }, { status: 500 })
+    return NextResponse.json<ApiResponse<null>>({ success: false, error: '服务器错误' }, { status: 500 })
   }
 }
 
 // 删除提示词
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   const authResult = await requireAuth(request)
-  if ('error' in authResult) {
-    return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
-  }
-
-  const { user, token } = authResult
-  const promptId = params.id
+  if ('error' in authResult) return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/prompts/${promptId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return NextResponse.json<ApiResponse<null>>({
-        success: false,
-        error: errorData.message || '删除提示词失败'
-      }, { status: response.status })
-    }
-
-    return NextResponse.json<ApiResponse<null>>({
-      success: true
-    })
-
+    const success = await SimpleDB.deletePrompt(parseInt(params.id))
+    return NextResponse.json<ApiResponse<null>>({ success })
   } catch (error) {
-    console.error('Delete prompt error:', error)
-    return NextResponse.json<ApiResponse<null>>({
-      success: false,
-      error: '服务器内部错误'
-    }, { status: 500 })
+    return NextResponse.json<ApiResponse<null>>({ success: false, error: '服务器错误' }, { status: 500 })
   }
 }

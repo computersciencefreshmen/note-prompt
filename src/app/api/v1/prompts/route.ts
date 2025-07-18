@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { CreatePromptData, PaginatedResponse, Prompt, ApiResponse } from '@/types'
-
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000'
+import { SimpleDB } from '@/lib/db'
 
 // 获取用户提示词列表
 export async function GET(request: NextRequest) {
@@ -11,34 +10,43 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
   }
 
-  const { user, token } = authResult
+  const { user } = authResult
   const { searchParams } = new URL(request.url)
 
-  const queryParams = new URLSearchParams()
-  queryParams.append('user_id', user.id.toString())
-
-  if (searchParams.get('folder_id')) queryParams.append('folder_id', searchParams.get('folder_id')!)
-  if (searchParams.get('search')) queryParams.append('search', searchParams.get('search')!)
-  if (searchParams.get('tag_name')) queryParams.append('tag_name', searchParams.get('tag_name')!)
-  if (searchParams.get('page')) queryParams.append('page', searchParams.get('page')!)
-  if (searchParams.get('limit')) queryParams.append('limit', searchParams.get('limit')!)
+  const params = {
+    folder_id: searchParams.get('folder_id') ? parseInt(searchParams.get('folder_id')!) : undefined,
+    search: searchParams.get('search') || undefined,
+    page: searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1,
+    limit: searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 12
+  }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/prompts?${queryParams}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
+    const result = await SimpleDB.findPromptsByUserId(user.id, params)
 
-    if (!response.ok) {
-      return NextResponse.json<ApiResponse<null>>({
-        success: false,
-        error: '获取提示词失败'
-      }, { status: response.status })
+    // 转换格式以匹配前端期望的数据结构
+    const formattedPrompts: Prompt[] = result.items.map(dbPrompt => ({
+      id: dbPrompt.id,
+      title: dbPrompt.title,
+      content: dbPrompt.content,
+      folder_id: dbPrompt.folder_id,
+      tags: dbPrompt.tags.map((tag, index) => ({ id: index, name: tag })),
+      updatedAt: dbPrompt.updated_at,
+      user_id: dbPrompt.user_id,
+      is_public: dbPrompt.is_public
+    }))
+
+    const response: PaginatedResponse<Prompt> = {
+      success: true,
+      data: {
+        items: formattedPrompts,
+        total: result.total,
+        page: params.page,
+        limit: params.limit,
+        totalPages: Math.ceil(result.total / params.limit)
+      }
     }
 
-    const data = await response.json()
-    return NextResponse.json<PaginatedResponse<Prompt>>(data)
+    return NextResponse.json(response)
 
   } catch (error) {
     console.error('Get prompts error:', error)
@@ -56,36 +64,45 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: authResult.error }, { status: authResult.status })
   }
 
-  const { user, token } = authResult
+  const { user } = authResult
 
   try {
     const body: CreatePromptData = await request.json()
 
-    // 添加用户ID到创建数据
-    const promptData = {
-      ...body,
-      user_id: user.id
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/prompts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(promptData)
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+    // 验证必需字段
+    if (!body.title || !body.content) {
       return NextResponse.json<ApiResponse<null>>({
         success: false,
-        error: errorData.message || '创建提示词失败'
-      }, { status: response.status })
+        error: '标题和内容不能为空'
+      }, { status: 400 })
     }
 
-    const data = await response.json()
-    return NextResponse.json<ApiResponse<Prompt>>(data)
+    // 创建提示词
+    const dbPrompt = await SimpleDB.createPrompt({
+      title: body.title,
+      content: body.content,
+      user_id: user.id,
+      folder_id: body.folder_id || 1,
+      tags: body.tags || [],
+      is_public: body.is_public || false
+    })
+
+    // 转换格式
+    const formattedPrompt: Prompt = {
+      id: dbPrompt.id,
+      title: dbPrompt.title,
+      content: dbPrompt.content,
+      folder_id: dbPrompt.folder_id,
+      tags: dbPrompt.tags.map((tag, index) => ({ id: index, name: tag })),
+      updatedAt: dbPrompt.updated_at,
+      user_id: dbPrompt.user_id,
+      is_public: dbPrompt.is_public
+    }
+
+    return NextResponse.json<ApiResponse<Prompt>>({
+      success: true,
+      data: formattedPrompt
+    })
 
   } catch (error) {
     console.error('Create prompt error:', error)

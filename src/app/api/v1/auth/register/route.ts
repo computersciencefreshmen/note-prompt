@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { RegisterRequest, AuthResponse } from '@/types'
+import { SimpleDB } from '@/lib/db'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key'
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000'
 
 export async function POST(request: NextRequest) {
   try {
+    // 初始化默认数据
+    await SimpleDB.initializeDefaultData()
+
     const body: RegisterRequest = await request.json()
     const { username, email, password } = body
 
@@ -34,40 +37,59 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // 调用后端API进行用户注册
-    const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, email, password }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+    // 检查用户名是否已存在
+    const existingUserByUsername = await SimpleDB.findUserByUsername(username)
+    if (existingUserByUsername) {
       return NextResponse.json<AuthResponse>({
         success: false,
-        error: errorData.message || '注册失败'
-      }, { status: response.status })
+        error: '用户名已存在'
+      }, { status: 409 })
     }
 
-    const userData = await response.json()
+    // 检查邮箱是否已存在
+    const existingUserByEmail = await SimpleDB.findUserByEmail(email)
+    if (existingUserByEmail) {
+      return NextResponse.json<AuthResponse>({
+        success: false,
+        error: '邮箱已被注册'
+      }, { status: 409 })
+    }
+
+    // 加密密码
+    const hashedPassword = await SimpleDB.hashPassword(password)
+
+    // 创建用户
+    const newUser = await SimpleDB.createUser({
+      username,
+      email,
+      password_hash: hashedPassword,
+      user_type: 'free' // 默认为免费用户
+    })
+
+    // 为新用户创建默认文件夹
+    await SimpleDB.createFolder({
+      name: '默认文件夹',
+      user_id: newUser.id,
+      parent_id: null
+    })
 
     // 生成JWT token
     const token = jwt.sign(
       {
-        userId: userData.id,
-        username: userData.username,
-        userType: userData.user_type
+        userId: newUser.id,
+        username: newUser.username,
+        userType: newUser.user_type
       },
       JWT_SECRET,
       { expiresIn: '7d' }
     )
 
+    // 返回用户信息（不包含密码）
+    const { password_hash, ...userWithoutPassword } = newUser
     const authResponse: AuthResponse = {
       success: true,
       data: {
-        user: userData,
+        user: userWithoutPassword,
         token
       }
     }
