@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI优化功能测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 15px;
+            resize: vertical;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .test-cases {
+            margin-bottom: 20px;
+        }
+        .test-case {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 1px solid #dee2e6;
+        }
+        .test-case:hover {
+            background: #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI优化功能测试</h1>
+
+        <div class="test-cases">
+            <h3>快速测试用例（点击使用）：</h3>
+            <div class="test-case" onclick="setTestCase(1)">
+                📝 写作助手 - "帮我写一篇文章"
+            </div>
+            <div class="test-case" onclick="setTestCase(2)">
+                💻 代码助手 - "请审查我的代码"
+            </div>
+            <div class="test-case" onclick="setTestCase(3)">
+                🎯 营销文案 - "写个产品介绍"
+            </div>
+        </div>
+
+        <form id="testForm">
+            <label for="prompt">原始提示词：</label>
+            <textarea id="prompt" placeholder="输入要优化的提示词..."></textarea>
+
+            <label for="requirement">特殊要求（可选）：</label>
+            <input type="text" id="requirement" placeholder="例如：更加专业、增加示例、简化语言...">
+
+            <button type="submit">🚀 开始AI优化</button>
+            <button type="button" onclick="testConnection()">🔗 测试连接</button>
+            <button type="button" onclick="clearResults()">🗑️ 清空结果</button>
+        </form>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('testForm');
+        const promptTextarea = document.getElementById('prompt');
+        const requirementInput = document.getElementById('requirement');
+        const resultDiv = document.getElementById('result');
+
+        // 测试用例
+        const testCases = {
+            1: {
+                prompt: "帮我写一篇文章",
+                requirement: "要求专业且有逻辑性"
+            },
+            2: {
+                prompt: "请审查我的代码",
+                requirement: "重点关注性能和安全"
+            },
+            3: {
+                prompt: "写个产品介绍",
+                requirement: "突出卖点，吸引用户"
+            }
+        };
+
+        function setTestCase(caseNum) {
+            const testCase = testCases[caseNum];
+            promptTextarea.value = testCase.prompt;
+            requirementInput.value = testCase.requirement;
+        }
+
+        function showResult(message, type) {
+            resultDiv.innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+
+        function clearResults() {
+            resultDiv.innerHTML = '';
+            promptTextarea.value = '';
+            requirementInput.value = '';
+        }
+
+        async function testConnection() {
+            showResult('🔄 测试连接中...', 'loading');
+
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+
+                if (response.ok) {
+                    showResult(`✅ 连接测试成功！\n服务器状态: ${data.status}\n时间: ${data.timestamp}`, 'success');
+                } else {
+                    showResult(`❌ 连接测试失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ 连接错误：${error.message}`, 'error');
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const prompt = promptTextarea.value.trim();
+            const userRequirement = requirementInput.value.trim();
+
+            if (!prompt) {
+                showResult('❌ 请输入要优化的提示词', 'error');
+                return;
+            }
+
+            showResult('🔄 AI正在优化中，请稍候...', 'loading');
+
+            try {
+                const response = await fetch('/api/v1/ai/optimize-prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        userRequirement: userRequirement || undefined
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    const result = `✅ AI优化成功！
+
+📝 原始提示词：
+${data.originalPrompt}
+
+✨ 优化后提示词：
+${data.optimizedPrompt}
+
+🆔 会话ID: ${data.conversationId}
+${data.isTestMode ? '\n⚠️ 测试模式' : '\n🎯 真实AI优化'}`;
+
+                    showResult(result, 'success');
+                } else {
+                    showResult(`❌ 优化失败：${data.error || data.details || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ 请求错误：${error.message}`, 'error');
+            }
+        });
+
+        // 页面加载时自动测试连接
+        window.onload = function() {
+            console.log('🚀 AI优化测试页面已加载');
+        };
+    </script>
+</body>
+</html>

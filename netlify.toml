@@ -1,0 +1,9 @@
+[build]
+  command = "bun run build"
+  publish = ".next"
+
+[build.environment]
+  DASHSCOPE_API_KEY = ""
+
+[[functions]]
+  function = ".netlify/functions/**/*"
